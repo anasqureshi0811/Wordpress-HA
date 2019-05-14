@@ -1,0 +1,569 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: WordPress Webserver Template with Wordpress installed and configured to automatically access RDS Database.
+Metadata:
+  AWSAMIRegionMap:
+    Filters:
+      AFAQAMIWP:
+        name: wordpress-linux-hvm
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - WebServerSubnets
+          - ALBSecurityGroup
+          - WebServerSecurityGroup
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+          - VPCID
+      - Label:
+          default: Database Configuration
+        Parameters:
+          - DatabaseName
+          - DatabaseMasterUsername
+          - DBEndpointAddress
+          - DBMasterUserPassword
+      - Label:
+          default: WordPress Webserver Configuration
+        Parameters:
+          - WordpressAdminPassword
+          - WebServerInstanceType
+          - WebServerInstanceMonitoring
+          - WebServerMinSize
+          - WebServerMaxSize
+          - WebServerDesiredCapacity
+          - KeyPairName
+          - AutoScalingNotificationEmail
+Parameters:
+  AutoScalingNotificationEmail:
+    AllowedPattern: >-
+      ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address to notify Auto Scaling operations
+    Type: String
+  WebServerSubnets:
+    ConstraintDescription: Must be list of existing subnet Ids
+    Default: ''
+    Description: >-
+      A list of subnet identifiers of Amazon VPCs where the WebServer
+      Autoscaling would be launched
+    Type: 'List<AWS::EC2::Subnet::Id>'
+  WebServerInstanceType:
+    AllowedValues:
+      - a1.medium
+      - a1.large
+      - a1.xlarge
+      - a1.2xlarge
+      - a1.4xlarge
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.12xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.12xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - c5d.large
+      - c5d.xlarge
+      - c5d.2xlarge
+      - c5d.4xlarge
+      - c5d.9xlarge
+      - c5d.18xlarge
+      - c5n.large
+      - c5n.xlarge
+      - c5n.2xlarge
+      - c5n.4xlarge
+      - c5n.9xlarge
+      - c5n.18xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5.metal
+      - r5a.large
+      - r5a.xlarge
+      - r5a.2xlarge
+      - r5a.4xlarge
+      - r5a.12xlarge
+      - r5a.24xlarge
+      - r5ad.large
+      - r5ad.xlarge
+      - r5ad.2xlarge
+      - r5ad.4xlarge
+      - r5ad.12xlarge
+      - r5ad.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - r5d.metal
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+      - z1d.metal
+    ConstraintDescription: Choose an instance type.
+    Default: t2.small
+    Description: Select WordPress instance size
+    Type: String
+  WebServerInstanceMonitoring:
+    Description: Set enhanced monitoring for WordPress instances
+    Type: String
+    Default: Enabled
+    AllowedValues:
+      - Enabled
+      - Disabled
+  WebServerSecurityGroup:
+    Description: Web Server Security Group
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  KeyPairName:
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+    Default: id_rsa_aws
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instances. Use
+      'bitnami' user for the ssh connection to the WordPress instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  DBEndpointAddress:
+    Description: Aurora DB Endpoint
+    Type: String
+  DBMasterUserPassword:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 chars. Cannot contain white space, @, /, "'
+    Description: The database admin account password (username is 'root')
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'True'
+    Type: String
+  DatabaseMasterUsername:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 chars. Cannot contain white space, @, /, "'
+    Description: The database admin account Username
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'True'
+    Type: String
+  DatabaseName:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 chars. Cannot contain white space, @, /, "'
+    Description: The database Name
+    MaxLength: '41'
+    MinLength: '6'
+    NoEcho: 'True'
+    Type: String
+  WordpressAdminPassword:
+    Description: The WordPress site admin account password (username is 'user')
+    Type: String
+    MinLength: '8'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must contain only alphanumeric characters and must be between 8 and 41
+      characters long.
+    NoEcho: 'true'
+  WebServerMinSize:
+    Default: '1'
+    Description: Minimum number of WordPress instances in Auto Scaling group
+    Type: Number
+  WebServerMaxSize:
+    Default: '12'
+    Description: Maximum number of WordPress instances in Auto Scaling group
+    Type: Number
+  WebServerDesiredCapacity:
+    Default: '2'
+    Description: Desired number of WordPress instances in Auto Scaling group
+    Type: Number
+  VPCID:
+    Description: Select the VPC to deploy WordPress
+    Type: 'AWS::EC2::VPC::Id'
+  PublicSubnet1ID:
+    Description: Public Subnet ID 1 located in Availability Zone 1
+    Type: 'AWS::EC2::Subnet::Id'
+  PublicSubnet2ID:
+    Description: Public Subnet ID 2 located in Availability Zone 2
+    Type: 'AWS::EC2::Subnet::Id'
+  ALBSecurityGroup:
+    Description: ALB Security Group
+    Type: 'AWS::EC2::SecurityGroup::Id'
+Mappings:
+  AWSAMIRegionMap:
+    AMI:
+      AFAQAMIWP: 'Amazon Linux AMI 2018.03.0 (HVM), SSD Volume Type '
+    ap-northeast-1:
+      AFAQAMIWP: ami-00a5245b4816c38e6
+    ap-northeast-2:
+      AFAQAMIWP: ami-00dc207f8ba6dc919
+    ap-southeast-1:
+      AFAQAMIWP: ami-05b3bcf7f311194b3
+    ap-southeast-2:
+      AFAQAMIWP: ami-02fd0b06f06d93dfc
+    eu-central-1:
+      AFAQAMIWP: ami-0cfbf4f6db41068ac
+    eu-west-1:
+      AFAQAMIWP: ami-08935252a36e25f85
+    eu-west-2:
+      AFAQAMIWP: ami-01419b804382064e4
+    us-east-1:
+      AFAQAMIWP: ami-0080e4c5bc078760e
+    us-east-2:
+      AFAQAMIWP: ami-0cd3dfa4e37921605
+    us-west-1:
+      AFAQAMIWP: ami-0ec6517f6edbf8044
+    us-west-2:
+      AFAQAMIWP: ami-01e24be29428c15b2
+Conditions:
+  EnableInstanceMonitoring: !Equals 
+    - !Ref WebServerInstanceMonitoring
+    - Enabled
+Resources:
+  WebServerInstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+  WebServerInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref WebServerInstanceRole
+  NotificationTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      Subscription:
+        - Endpoint: !Ref AutoScalingNotificationEmail
+          Protocol: email
+      TopicName: !Sub '${AWS::StackName}-WordpressSnsTopic'
+  ApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Subnets:
+        - !Ref PublicSubnet1ID
+        - !Ref PublicSubnet2ID
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: WordpressALB
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPCID
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '30'
+  ALBListenerHTTP:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  WebServerASG:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      LaunchConfigurationName: !Ref WebServerLC
+      MinSize: !Ref WebServerMinSize
+      MaxSize: !Ref WebServerMaxSize
+      DesiredCapacity: !Ref WebServerDesiredCapacity
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      VPCZoneIdentifier: !Ref WebServerSubnets
+      NotificationConfiguration:
+        TopicARN: !Ref NotificationTopic
+        NotificationTypes:
+          - 'autoscaling:EC2_INSTANCE_LAUNCH'
+          - 'autoscaling:EC2_INSTANCE_LAUNCH_ERROR'
+          - 'autoscaling:EC2_INSTANCE_TERMINATE'
+          - 'autoscaling:EC2_INSTANCE_TERMINATE_ERROR'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-Web Server'
+          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Count: !Ref WebServerDesiredCapacity
+        Timeout: PT25M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        PauseTime: PT25M
+        SuspendProcesses:
+          - HealthCheck
+          - ReplaceUnhealthy
+          - AZRebalance
+          - AlarmNotification
+          - ScheduledActions
+        WaitOnResourceSignals: true
+  WebServerLC:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    DependsOn:
+      - ApplicationLoadBalancer
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          wordpress_install:
+            - install_cfn
+            - install_wordpress
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - >
+                    path=Resources.WebServerLC.Metadata.AWS::CloudFormation::Init
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource WebServerLC '
+                  - '         --configsets wordpress_install '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_wordpress:
+          packages:
+            yum:
+              php70: []
+              php70-mysqlnd: []
+              mysql56-server: []
+              httpd24: []
+          sources:
+            /var/www/html: 'http://wordpress.org/latest.tar.gz'
+          files:
+            /tmp/create-wp-config:
+              content: !Join 
+                - ''
+                - - |
+                    #!/bin/bash
+                  - >
+                    cp /var/www/html/wordpress/wp-config-sample.php
+                    /var/www/html/wordpress/wp-config.php
+                  - sed -i "s/'database_name_here'/'
+                  - !Ref DatabaseName
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'username_here'/'
+                  - !Ref DatabaseMasterUsername
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'password_here'/'
+                  - !Ref DBMasterUserPassword
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'localhost'/'
+                  - !Ref DBEndpointAddress
+                  - |
+                    '/g" wp-config.php
+              mode: '000500'
+              owner: root
+              group: root
+          commands:
+            01_configure_wordpress:
+              command: /tmp/create-wp-config
+              cwd: /var/www/html/wordpress
+          services:
+            sysvinit:
+              httpd:
+                enabled: 'true'
+                ensureRunning: 'true'
+    Properties:
+      ImageId: !FindInMap 
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - AFAQAMIWP
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum update -y aws-cfn-bootstrap
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource WebServerLC '
+            - '         --configsets wordpress_install '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource WebServerASG '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - ''
+      InstanceType: !Ref WebServerInstanceType
+      InstanceMonitoring: !If 
+        - EnableInstanceMonitoring
+        - true
+        - false
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref WebServerInstanceProfile
+  WebServerTargetTrackingScalingPolicy:
+    Type: 'AWS::AutoScaling::ScalingPolicy'
+    Properties:
+      AutoScalingGroupName: !Ref WebServerASG
+      Cooldown: '60'
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 75
+Outputs:
+  ELBURL:
+    Description: >-
+      The URL of the ELB. can point your domain to it by using a CNAME/ALIAS DNS
+      record
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - ApplicationLoadBalancer
+          - DNSName
+        - /wordpress

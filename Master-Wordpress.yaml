@@ -1,0 +1,479 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys WordPress into an existing VPC consisting of two public and two private subnets. 
+  The template can be used to keep Wordpress 
+  Web Servers and RDS resources in private subnets with NATGW access while 
+  Elastic Load Balancer can be kept in Public subnets with internet gateway access. 
+  A bastion hosts can be created in public subnets with bastion security group assgined to ssh EC2 in private subnets.
+  This template creates EC2 instances and related resources. You will be billed for
+  the AWS resources used if you create a stack from this template.
+  Test Enviornment can be created by using RDS multiAZ option false and EC2 Autoscaling to create less EC2 nodes.
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCID
+          - VPCCIDR
+          - PrivateSubnet1ID
+          - PrivateSubnet2ID
+          - PublicSubnet1ID
+          - PublicSubnet2ID
+          - ALBAccessCIDR
+          - BastionSecurityGroupID
+      - Label:
+          default: Aurora Database Configuration
+        Parameters:
+          - DBAutoMinorVersionUpgrade
+          - DBBackupRetentionPeriod
+          - DBPreferredBackupWindow
+          - DBInstanceClass
+          - DBMasterUserPassword
+          - DBMultiAZ
+          - DatabaseName
+          - DatabaseMasterUsername
+      - Label:
+          default: WordPress Webserver Configuration
+        Parameters:
+          - WordpressAdminPassword
+          - WebServerInstanceType
+          - WebServerInstanceMonitoring
+          - KeyPairName
+          - WebServerMinSize
+          - WebServerMaxSize
+          - WebServerDesiredCapacity 
+          - AutoScalingNotificationEmail
+    ParameterLabels:
+      BastionSecurityGroupID:
+        default: Bastion Security Group ID
+      DBAutoMinorVersionUpgrade:
+        default: Enable Auto Minor Version Upgrade
+      DBBackupRetentionPeriod:
+        default: Backup Retention Period
+      DBPreferredBackupWindow:
+        default: Preferred Backup Window
+      DBInstanceClass:
+        default: Database Instance Size
+      DBMasterUserPassword:
+        default: Database Admin Password
+      DBMultiAZ:
+        default: Multi-AZ Database
+      DatabaseMasterUsername:
+        default: Database Admin User
+      DatabaseName:
+        default: Name of Database  
+      WordpressAdminPassword:
+        default: Admin Password
+      KeyPairName:
+        default: SSH Keypair Name
+      PrivateSubnet1ID:
+        default: Private Subnet-1 ID
+      PrivateSubnet2ID:
+        default: Private Subnet-2 ID
+      PublicSubnet1ID:
+        default: Public Subnet-1 ID
+      PublicSubnet2ID:
+        default: Public Subnet-2 ID
+      ALBAccessCIDR:
+        default: Allowed CIDR for ALB Access
+      VPCCIDR:
+        default: VPC CIDR
+      VPCID:
+        default: VPC ID
+      WebServerDesiredCapacity:
+        default: Desired Number of Instances
+      WebServerInstanceType:
+        default: Instance Size
+      WebServerInstanceMonitoring:
+        default: Instance enhanced monitoring
+      WebServerMaxSize:
+        default: Max Number of Instances
+      WebServerMinSize:
+        default: Min Number of Instances
+      AutoScalingNotificationEmail:
+        default: autoscaling email notification 
+Parameters:
+  BastionSecurityGroupID:
+    Description: 'ID of the Bastion Security Group (e.g., sg-1d2c3b4a)'
+    Type: 'AWS::EC2::SecurityGroup::Id'
+  DBAutoMinorVersionUpgrade:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Select true/false to setup Auto Minor Version upgrade
+    Type: String
+  DBBackupRetentionPeriod:
+    ConstraintDescription: Database backup retention period must be between 1 and 35 days
+    Default: '7'
+    Description: The number of days for which automatic DB snapshots are retained
+    MaxValue: '35'
+    MinValue: '1'
+    Type: Number
+  DBPreferredBackupWindow:
+    AllowedPattern: '^(|([0-1][0-9]|2[0-3]):[0-5][0-9]-([0-1][0-9]|2[0-3]):[0-5][0-9])$'
+    ConstraintDescription: 'Preferred backup window must be left blank or in the form of HH:MM-HH:MM'
+    Default: ''
+    Description: (Optional) Preferred backup window
+    Type: String
+  DBInstanceClass:
+    AllowedValues:
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+      - db.t2.xlarge
+      - db.t2.2xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.m4.16xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.r4.large
+      - db.r4.xlarge
+      - db.r4.2xlarge
+      - db.r4.4xlarge
+      - db.r4.8xlarge
+      - db.r4.16xlarge
+    ConstraintDescription: Must select a valid database instance type.
+    Default: db.t2.small
+    Description: Select Instance size for the Database
+    Type: String
+  DBMasterUserPassword:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 alphanumeric. Cannot contain white space, @, /, "'
+    Description: The database admin account password, Min 8 alphanumeric plus digits.  
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'True'
+    Type: String
+  DatabaseMasterUsername:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 chars. Cannot contain white space, @, /, "'
+    Description: The database admin username, Min 8 alphanumeric plus digits
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'True'
+    Type: String
+  DatabaseName:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: 'Min 8 chars. Cannot contain white space, @, /, "'
+    Description: The database name
+    MaxLength: '41'
+    MinLength: '6'
+    NoEcho: 'True'
+    Type: String
+    Default: AFAQAuroraDB
+  DBMultiAZ:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: >-
+      Specifies if the database instance is a multiple Availability Zone
+      deployment
+    Type: String
+  WordpressAdminPassword:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must contain only alphanumeric characters and must be between 8 and 41
+      characters long.
+    Description: The WordPress site admin account password, Min 8 alphanumeric plus digits
+    MaxLength: '41'
+    MinLength: '8'
+    NoEcho: 'true'
+    Type: String
+  KeyPairName:
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instances. Use
+      'bitnami' user for the ssh connection in the WordPress instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  PrivateSubnet1ID:
+    Description: Private Subnet ID 1 located in Availability Zone 1
+    Type: 'AWS::EC2::Subnet::Id'
+  PrivateSubnet2ID:
+    Description: Private Subnet ID 2  located in Availability Zone 2
+    Type: 'AWS::EC2::Subnet::Id'
+  PublicSubnet1ID:
+    Description: Public Subnet ID 1 located in Availability Zone 1
+    Type: 'AWS::EC2::Subnet::Id'
+  PublicSubnet2ID:
+    Description: Public Subnet ID 2 located in Availability Zone 2
+    Type: 'AWS::EC2::Subnet::Id'
+  ALBAccessCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: CIDR block parameter must be in the form x.x.x.x/x
+    Default: 0.0.0.0/0
+    Description: >-
+      Allowed CIDR block for external web access to the Application Load
+      Balancer
+    Type: String
+  VPCCIDR:
+    AllowedPattern: >-
+      ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    ConstraintDescription: Must be a valid IP range in x.x.x.x/x notation
+    Description: The CIDR IP range of VPC
+    Type: String
+  VPCID:
+    Description: Select the VPC to deploy WordPress
+    Type: 'AWS::EC2::VPC::Id'
+  WebServerDesiredCapacity:
+    Default: '2'
+    Description: Desired number of WordPress instances in Auto Scaling group
+    Type: Number
+  WebServerInstanceType:
+    AllowedValues:
+      - a1.medium
+      - a1.large
+      - a1.xlarge
+      - a1.2xlarge
+      - a1.4xlarge
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+      - t3.2xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - m4.16xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - m5.metal
+      - m5a.large
+      - m5a.xlarge
+      - m5a.2xlarge
+      - m5a.4xlarge
+      - m5a.12xlarge
+      - m5a.24xlarge
+      - m5ad.large
+      - m5ad.xlarge
+      - m5ad.2xlarge
+      - m5ad.4xlarge
+      - m5ad.12xlarge
+      - m5ad.24xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+      - m5d.12xlarge
+      - m5d.24xlarge
+      - m5d.metal
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+      - c5d.large
+      - c5d.xlarge
+      - c5d.2xlarge
+      - c5d.4xlarge
+      - c5d.9xlarge
+      - c5d.18xlarge
+      - c5n.large
+      - c5n.xlarge
+      - c5n.2xlarge
+      - c5n.4xlarge
+      - c5n.9xlarge
+      - c5n.18xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - r5.large
+      - r5.xlarge
+      - r5.2xlarge
+      - r5.4xlarge
+      - r5.12xlarge
+      - r5.24xlarge
+      - r5.metal
+      - r5a.large
+      - r5a.xlarge
+      - r5a.2xlarge
+      - r5a.4xlarge
+      - r5a.12xlarge
+      - r5a.24xlarge
+      - r5ad.large
+      - r5ad.xlarge
+      - r5ad.2xlarge
+      - r5ad.4xlarge
+      - r5ad.12xlarge
+      - r5ad.24xlarge
+      - r5d.large
+      - r5d.xlarge
+      - r5d.2xlarge
+      - r5d.4xlarge
+      - r5d.12xlarge
+      - r5d.24xlarge
+      - r5d.metal
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - i3.large
+      - i3.xlarge
+      - i3.2xlarge
+      - i3.4xlarge
+      - i3.8xlarge
+      - i3.16xlarge
+      - x1.16xlarge
+      - x1.32xlarge
+      - x1e.xlarge
+      - x1e.2xlarge
+      - x1e.4xlarge
+      - x1e.8xlarge
+      - x1e.16xlarge
+      - x1e.32xlarge
+      - z1d.large
+      - z1d.xlarge
+      - z1d.2xlarge
+      - z1d.3xlarge
+      - z1d.6xlarge
+      - z1d.12xlarge
+      - z1d.metal
+    ConstraintDescription: Choose an instance type.
+    Default: t2.small
+    Description: Select WordPress instance size
+    Type: String
+  WebServerInstanceMonitoring:
+    Description: Set enhanced monitoring for WordPress instances
+    Type: String
+    Default: Enabled
+    AllowedValues:
+      - Enabled
+      - Disabled
+  WebServerMaxSize:
+    Default: '12'
+    Description: Maximum number of WordPress instances in the Auto Scaling group
+    Type: Number
+  WebServerMinSize:
+    Default: '1'
+    Description: Minimum number of WordPress instances in the Auto Scaling group
+    Type: Number
+  AutoScalingNotificationEmail:
+    AllowedPattern: >-
+      ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: Must be a valid email address.
+    Description: Email address to notify Auto Scaling operations
+    Type: String
+Resources:
+  SecurityGroupsStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://wordpresssite-afaq.s3.amazonaws.com/SecurityGroups.yaml
+      Parameters:
+        VPCID: !Ref VPCID
+        VPCCIDR: !Ref VPCCIDR
+        ALBAccessCIDR: !Ref ALBAccessCIDR
+        BastionSecurityGroupID: !Ref BastionSecurityGroupID
+  RDSAuroraStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://wordpresssite-afaq.s3.amazonaws.com/RDSAroura.yaml
+      Parameters:
+        Subnets: !Join 
+          - ','
+          - - !Ref PrivateSubnet1ID
+            - !Ref PrivateSubnet2ID
+        AuroraRDSSecurityGroup: !GetAtt 
+          - SecurityGroupsStack
+          - Outputs.AuroraRDSSecurityGroup
+        DBAutoMinorVersionUpgrade: !Ref DBAutoMinorVersionUpgrade
+        DBBackupRetentionPeriod: !Ref DBBackupRetentionPeriod
+        DBPreferredBackupWindow: !Ref DBPreferredBackupWindow
+        DBInstanceClass: !Ref DBInstanceClass
+        DBMasterUserPassword: !Ref DBMasterUserPassword
+        DatabaseMasterUsername: !Ref DatabaseMasterUsername
+        DatabaseName: !Ref DatabaseName
+        DBMultiAZ: !Ref DBMultiAZ
+  WebserverStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub >-
+        https://wordpresssite-afaq.s3.amazonaws.com/WebServers.yaml
+      Parameters:
+        WebServerSubnets: !Join 
+          - ','
+          - - !Ref PrivateSubnet1ID
+            - !Ref PrivateSubnet2ID
+        WebServerInstanceType: !Ref WebServerInstanceType
+        WebServerSecurityGroup: !GetAtt 
+          - SecurityGroupsStack
+          - Outputs.WebServerSecurityGroup
+        KeyPairName: !Ref KeyPairName
+        DBEndpointAddress: !GetAtt 
+          - RDSAuroraStack
+          - Outputs.AuroraEndPointAddress
+        DBMasterUserPassword: !Ref DBMasterUserPassword
+        DatabaseMasterUsername: !Ref DatabaseMasterUsername
+        DatabaseName: !Ref DatabaseName
+        WordpressAdminPassword: !Ref WordpressAdminPassword
+        WebServerMinSize: !Ref WebServerMinSize
+        WebServerMaxSize: !Ref WebServerMaxSize
+        WebServerInstanceMonitoring: !Ref WebServerInstanceMonitoring
+        WebServerDesiredCapacity: !Ref WebServerDesiredCapacity
+        PublicSubnet1ID: !Ref PublicSubnet1ID
+        PublicSubnet2ID: !Ref PublicSubnet2ID
+        VPCID: !Ref VPCID
+        AutoScalingNotificationEmail: !Ref AutoScalingNotificationEmail
+        ALBSecurityGroup: !GetAtt 
+          - SecurityGroupsStack
+          - Outputs.ALBSecurityGroup
+Outputs:
+  ELBURL:
+    Description: >-
+      The URL of the ELB. Can point your own domain to it by using a CNAME/ALIAS DNS
+      record
+    Value: !GetAtt 
+      - WebserverStack
+      - Outputs.ELBURL
